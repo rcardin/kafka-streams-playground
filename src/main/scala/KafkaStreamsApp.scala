@@ -1,22 +1,36 @@
 package in.rcardin.kafka.streams
 
 import org.apache.kafka.common.utils.Bytes
-import org.apache.kafka.streams.StreamsBuilder
+import org.apache.kafka.streams.{KafkaStreams, StreamsBuilder, StreamsConfig, Topology}
 import org.apache.kafka.streams.kstream.{KStream, KTable, Materialized}
 import org.apache.kafka.streams.scala.serialization.Serdes
 import org.apache.kafka.streams.state.KeyValueStore
 
+import java.util.Properties
+
 // Creation of the topic:
+// ----------------------
+//
 // kafka-topics \
 //  --bootstrap-server localhost:9092 \
 //  --topic jobs \
 //  --create
 //
 // kafka-topics \
-// --bootstrap-server localhost:9092 \
-// --topic permissions \
-// --create
-// --config "cleanup.policy=compact"
+//  --bootstrap-server localhost:9092 \
+//  --topic permissions \
+//  --create \
+//  --config "cleanup.policy=compact"
+//
+//  Producing some messages
+//  -----------------------
+//
+//  kafka-console-producer \
+//   --topic jobs \
+//   --broker-list localhost:9092 \
+//   --property parse.key=true \
+//   --property key.separator=,
+//   user1,{"name": "user1", "name": "print", "params": {}}
 object KafkaStreamsApp {
 
   val Jobs: String = "jobs"
@@ -28,7 +42,7 @@ object KafkaStreamsApp {
 
   val builder = new StreamsBuilder
 
-  val source: KStream[String, Job] = builder.stream(Jobs)
+  val source: KStream[String, Job] = builder.stream(Jobs).peek { (user, job) => println(job) }
 
   val permissionsTable: KTable[String, String] = builder.table(
     Permissions,
@@ -47,7 +61,17 @@ object KafkaStreamsApp {
     println(s"The user $user, with roles ${authoredJob.permissions}, requested to execute job ${authoredJob.job.name}")
   }
 
-  def main(args: Array[String]): Unit = {
+  val topology: Topology = builder.build();
 
+  def main(args: Array[String]): Unit = {
+    val props = new Properties
+    props.put(StreamsConfig.APPLICATION_ID_CONFIG, "scheduler")
+    props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
+    props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.stringSerde.getClass)
+
+    println(topology.describe())
+
+    val application: KafkaStreams = new KafkaStreams(topology, props)
+    application.start()
   }
 }
