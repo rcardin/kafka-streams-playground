@@ -22,7 +22,7 @@ object KafkaStreamsApp {
   val Jobs: String = "jobs"
   val Permissions: String = "permissions"
 
-  case class Job(user: String, params: Map[String, String])
+  case class Job(user: String, name: String, params: Map[String, String])
 
   case class AuthoredJob(job: Job, permissions: String)
 
@@ -42,6 +42,10 @@ object KafkaStreamsApp {
     permissionsTable,
     (job, permissions) => AuthoredJob(job, permissions)
   )
+
+  authoredJobs.foreach { (user, authoredJob) =>
+    println(s"The user $user, with roles ${authoredJob.permissions}, requested to execute job ${authoredJob.job.name}")
+  }
 
   def main(args: Array[String]): Unit = {
 
