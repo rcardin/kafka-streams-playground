@@ -4,9 +4,11 @@ import io.circe.generic.auto._
 import io.circe.parser._
 import io.circe.syntax._
 import org.apache.kafka.common.serialization.Serde
-import org.apache.kafka.streams.kstream.KStream
-import org.apache.kafka.streams.scala.kstream.Consumed
+import org.apache.kafka.common.utils.Bytes
+import org.apache.kafka.streams.kstream.{KStream, KTable}
+import org.apache.kafka.streams.scala.kstream.{Consumed, Materialized}
 import org.apache.kafka.streams.scala.serialization.Serdes
+import org.apache.kafka.streams.state.KeyValueStore
 import org.apache.kafka.streams.{KafkaStreams, StreamsBuilder, StreamsConfig, Topology}
 
 import java.util.Properties
@@ -36,20 +38,33 @@ import java.util.Properties
 //   user1,{"user": "user1", "name": "print", "params": {}}
 object KafkaStreamsApp {
 
-  val Jobs: String = "jobs"
-  val Permissions: String = "permissions"
+  val JobsTopic: String = "jobs"
+  val PermissionsTopic: String = "permissions"
 
   implicit val stringSerde: Serde[String] = Serdes.stringSerde
 
   case class Job(user: String, name: String, params: Map[String, String])
   object Job {
-    implicit val jobSerde: Serde[Job] = Serdes.fromFn[Job](
-      (job: Job) => job.asJson.noSpaces.getBytes,
-      (jobBytes: Array[Byte]) => {
-        val stringJob = new String(jobBytes)
-        decode[Job](stringJob).toOption
+    implicit val jobSerde: Serde[Job] = {
+      val serializer = (job: Job) => job.asJson.noSpaces.getBytes
+      val deserializer = (jobAsBytes: Array[Byte]) => {
+        val jobAsString = new String(jobAsBytes)
+        decode[Job](jobAsString).toOption
       }
-    )
+      Serdes.fromFn[Job](serializer, deserializer)
+    }
+  }
+
+  case class Permissions(permissions: List[String])
+  object Permissions {
+    implicit val permissionsSerde: Serde[Permissions] = {
+      val serializer = (permissions: Permissions) => permissions.asJson.noSpaces.getBytes
+      val deserializer = (permissionsAsBytes: Array[Byte]) => {
+        val permissionsAsString = new String(permissionsAsBytes)
+        decode[Permissions](permissionsAsString).toOption
+      }
+      Serdes.fromFn[Permissions](serializer, deserializer)
+    }
   }
 
   case class AuthoredJob(job: Job, permissions: String)
@@ -57,22 +72,18 @@ object KafkaStreamsApp {
   val builder = new StreamsBuilder
 
   val source: KStream[String, Job] =
-    builder.stream(Jobs, Consumed.`with`[String, Job]).peek { (_, job) => println(job) }
+    builder.stream(JobsTopic, Consumed.`with`[String, Job])
 
-  source.foreach((k, v) => println())
-//
-//  val permissionsTable: KTable[String, String] = builder.table(
-//    Permissions,
-//    Materialized
-//      .as[String, String, KeyValueStore[Bytes, Array[Byte]]]("permissions-store")
-//      .withKeySerde(Serdes.stringSerde)
-//      .withValueSerde(Serdes.stringSerde)
-//  )
-//
-//  val authoredJobs: KStream[String, AuthoredJob] = source.join(
-//    permissionsTable,
-//    (job, permissions) => AuthoredJob(job, permissions)
-//  )
+  val permissionsTable: KTable[String, Permissions] = builder.table(
+    PermissionsTopic,
+    Materialized.`with`[String, Permissions, KeyValueStore[Bytes, Array[Byte]]]
+  )
+
+  val authoredJobs: KStream[String, (Job, Permissions)] = source.join(
+    permissionsTable,
+    (job: Job, permissions: Permissions) => (job, permissions)
+  )
+  // TODO Insert a foreach
 //
 //  authoredJobs.foreach { (user, authoredJob) =>
 //    println(s"The user $user, with roles ${authoredJob.permissions}, requested to execute job ${authoredJob.job.name}")
