@@ -43,6 +43,8 @@ object KafkaStreamsApp {
 
   implicit val stringSerde: Serde[String] = Serdes.stringSerde
 
+  // Can we implement a type class?
+
   case class Job(user: String, name: String, params: Map[String, String])
   object Job {
     implicit val jobSerde: Serde[Job] = {
@@ -61,39 +63,45 @@ object KafkaStreamsApp {
       val serializer = (permissions: Permissions) => permissions.asJson.noSpaces.getBytes
       val deserializer = (permissionsAsBytes: Array[Byte]) => {
         val permissionsAsString = new String(permissionsAsBytes)
-        decode[Permissions](permissionsAsString).toOption
+        val result = decode[Permissions](permissionsAsString)
+        result.toOption
       }
       Serdes.fromFn[Permissions](serializer, deserializer)
     }
   }
 
-  case class AuthoredJob(job: Job, permissions: String)
+  case class AuthoredJob(job: Job, permissions: Permissions)
+  object AuthoredJob {
+    implicit val authoredJobSerde: Serde[AuthoredJob] = {
+      val serializer = (authoredJob: AuthoredJob) => authoredJob.asJson.noSpaces.getBytes
+      val deserializer = (authoredJobAsBytes: Array[Byte]) => {
+        val authoredJobAsString = new String(authoredJobAsBytes)
+        decode[AuthoredJob](authoredJobAsString).toOption
+      }
+      Serdes.fromFn[AuthoredJob](serializer, deserializer)
+    }
+  }
 
   val builder = new StreamsBuilder
 
   val source: KStream[String, Job] =
-    builder.stream(JobsTopic, Consumed.`with`[String, Job])
+    builder.stream(JobsTopic, Consumed.`with`[String, Job]).peek((k, v) => println(s"($k, $v)"))
 
   val permissionsTable: KTable[String, Permissions] = builder.table(
     PermissionsTopic,
     Materialized.`with`[String, Permissions, KeyValueStore[Bytes, Array[Byte]]]
   )
 
-  val authoredJobs: KStream[String, (Job, Permissions)] = source.join(
+  val authoredJobs: KStream[String, String] = source.join(
     permissionsTable,
-    (job: Job, permissions: Permissions) => (job, permissions)
-  )
-  // TODO Insert a foreach
-//
-//  authoredJobs.foreach { (user, authoredJob) =>
-//    println(s"The user $user, with roles ${authoredJob.permissions}, requested to execute job ${authoredJob.job.name}")
-//  }
+    (job: Job, permissions: Permissions) => s"($job, $permissions)"
+  ).peek((k, v) => println(s"($k, $v)"))
 
-//  builder
-//    .stream("jobs", Consumed.`with`(Serdes.stringSerde, Serdes.stringSerde))
-//    .foreach((k, v) => println(s"($k, $v)"))
+  authoredJobs.foreach { (user, authoredJob) =>
+    println(s"The user $user was authored to job $authoredJob")
+  }
 
-  val topology: Topology = builder.build();
+  val topology: Topology = builder.build()
 
   def main(args: Array[String]): Unit = {
     val props = new Properties
