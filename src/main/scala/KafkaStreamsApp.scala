@@ -1,5 +1,6 @@
-package in.rcardin.kafka.streams
 
+
+import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
 import io.circe.parser._
 import io.circe.syntax._
@@ -41,59 +42,35 @@ object KafkaStreamsApp {
   val JobsTopic: String = "jobs"
   val PermissionsTopic: String = "permissions"
 
+  def serde[A >: Null :Decoder :Encoder]: Serde[A] = {
+    val serializer = (a: A) => a.asJson.noSpaces.getBytes
+    val deserializer = (aAsBytes: Array[Byte]) => {
+      val aAsString = new String(aAsBytes)
+      val aOrError = decode[A](aAsString)
+      aOrError match {
+        case Right(a) => Option(a)
+        case Left(error) =>
+          println(s"There was an error converting the message $aOrError, $error")
+          Option.empty
+      }
+    }
+    Serdes.fromFn[A](serializer, deserializer)
+  }
+
   // Can we implement a type class?
   case class Job(user: String, name: String, params: Map[String, String])
   object Job {
-    implicit val jobSerde: Serde[Job] = {
-      val serializer = (job: Job) => job.asJson.noSpaces.getBytes
-      val deserializer = (jobAsBytes: Array[Byte]) => {
-        val jobAsString = new String(jobAsBytes)
-        val jobOrError = decode[Job](jobAsString)
-        jobOrError match {
-          case Right(job) => Option(job)
-          case Left(error) =>
-            println(s"There was an error converting the message $jobOrError, $error")
-            Option.empty
-        }
-      }
-      Serdes.fromFn[Job](serializer, deserializer)
-    }
+    implicit val jobSerde: Serde[Job] = serde[Job]
   }
 
   case class Permissions(permissions: List[String])
   object Permissions {
-    implicit val permissionsSerde: Serde[Permissions] = {
-      val serializer = (permissions: Permissions) => permissions.asJson.noSpaces.getBytes
-      val deserializer = (permissionsAsBytes: Array[Byte]) => {
-        val permissionsAsString = new String(permissionsAsBytes)
-        val permissionsOrError = decode[Permissions](permissionsAsString)
-        permissionsOrError match {
-          case Right(permissions) => Option(permissions)
-          case Left(error) =>
-            println(s"There was an error converting the message $permissionsOrError, $error")
-            Option.empty
-        }
-      }
-      Serdes.fromFn[Permissions](serializer, deserializer)
-    }
+    implicit val permissionsSerde: Serde[Permissions] = serde[Permissions]
   }
 
   case class AuthoredJob(job: Job, permissions: Permissions)
   object AuthoredJob {
-    implicit val authoredJobSerde: Serde[AuthoredJob] = {
-      val serializer = (authoredJob: AuthoredJob) => authoredJob.asJson.noSpaces.getBytes
-      val deserializer = (authoredJobAsBytes: Array[Byte]) => {
-        val authoredJobAsString = new String(authoredJobAsBytes)
-        val authoredJobOrError = decode[AuthoredJob](authoredJobAsString)
-        authoredJobOrError match {
-          case Right(authoredJob) => Option(authoredJob)
-          case Left(error) =>
-            println(s"There was an error converting the message $authoredJobAsString, $error")
-            Option.empty
-        }
-      }
-      Serdes.fromFn[AuthoredJob](serializer, deserializer)
-    }
+    implicit val authoredJobSerde: Serde[AuthoredJob] = serde[AuthoredJob]
   }
 
   val builder = new StreamsBuilder
