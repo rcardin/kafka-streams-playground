@@ -1,3 +1,4 @@
+package in.rcardin.kafka.streams
 
 
 import io.circe.{Decoder, Encoder}
@@ -42,7 +43,7 @@ object KafkaStreamsApp {
   val JobsTopic: String = "jobs"
   val PermissionsTopic: String = "permissions"
 
-  def serde[A >: Null :Decoder :Encoder]: Serde[A] = {
+  def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
     val serializer = (a: A) => a.asJson.noSpaces.getBytes
     val deserializer = (aAsBytes: Array[Byte]) => {
       val aAsString = new String(aAsBytes)
@@ -59,16 +60,19 @@ object KafkaStreamsApp {
 
   // Can we implement a type class?
   case class Job(user: String, name: String, params: Map[String, String])
+
   object Job {
     implicit val jobSerde: Serde[Job] = serde[Job]
   }
 
   case class Permissions(permissions: List[String])
+
   object Permissions {
     implicit val permissionsSerde: Serde[Permissions] = serde[Permissions]
   }
 
   case class AuthoredJob(job: Job, permissions: Permissions)
+
   object AuthoredJob {
     implicit val authoredJobSerde: Serde[AuthoredJob] = serde[AuthoredJob]
   }
@@ -83,7 +87,7 @@ object KafkaStreamsApp {
   val authoredJobs: KStream[String, AuthoredJob] =
     source.join(permissionsTable) { (job: Job, permissions: Permissions) =>
       AuthoredJob(job, permissions)
-  }
+    }
 
   authoredJobs.foreach { (user, authoredJob) =>
     println(s"The user $user was authored to job $authoredJob")
