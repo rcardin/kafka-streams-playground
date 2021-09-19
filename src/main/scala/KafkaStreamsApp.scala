@@ -42,6 +42,7 @@ object KafkaStreamsApp {
 
   val JobsTopic: String = "jobs"
   val PermissionsTopic: String = "permissions"
+  val UserClicks: String = "clicks"
 
   def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
     val serializer = (a: A) => a.asJson.noSpaces.getBytes
@@ -58,7 +59,6 @@ object KafkaStreamsApp {
     Serdes.fromFn[A](serializer, deserializer)
   }
 
-  // Can we implement a type class?
   case class Job(user: String, name: String, params: Map[String, String])
 
   object Job {
@@ -84,12 +84,16 @@ object KafkaStreamsApp {
 
   val permissionsTable: KTable[String, Permissions] = builder.table[String, Permissions](PermissionsTopic)
 
-  val authoredJobs: KStream[String, AuthoredJob] =
+  val authoredJobsStream: KStream[String, AuthoredJob] =
     source.join[Permissions, AuthoredJob](permissionsTable) { (job: Job, permissions: Permissions) =>
       AuthoredJob(job, permissions)
     }
 
-  authoredJobs.foreach { (user, authoredJob) =>
+  val usersClicksStream: KStream[String, Int] = builder.stream[String, Int](UserClicks)
+
+  // authoredJobsStream.join[Int, Int](usersClicksStream)()
+
+  authoredJobsStream.foreach { (user, authoredJob) =>
     println(s"The user $user was authored to job $authoredJob")
   }
 
