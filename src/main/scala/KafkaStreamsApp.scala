@@ -80,12 +80,12 @@ object KafkaStreamsApp {
   val builder = new StreamsBuilder
 
   val source: KStream[String, Job] =
-    builder.stream[String, Job](JobsTopic).peek((k, v) => println(s"($k, $v)"))
+    builder.stream[String, Job](JobsTopic)
 
-  val permissionsTable: KTable[String, Permissions] = builder.table(PermissionsTopic)
+  val permissionsTable: KTable[String, Permissions] = builder.table[String, Permissions](PermissionsTopic)
 
   val authoredJobs: KStream[String, AuthoredJob] =
-    source.join(permissionsTable) { (job: Job, permissions: Permissions) =>
+    source.join[Permissions, AuthoredJob](permissionsTable) { (job: Job, permissions: Permissions) =>
       AuthoredJob(job, permissions)
     }
 
