@@ -6,6 +6,7 @@ import io.circe.generic.auto._
 import io.circe.parser._
 import io.circe.syntax._
 import org.apache.kafka.common.serialization.Serde
+import org.apache.kafka.streams.kstream.GlobalKTable
 import org.apache.kafka.streams.scala.ImplicitConversions._
 import org.apache.kafka.streams.scala._
 import org.apache.kafka.streams.scala.kstream.{KStream, KTable}
@@ -59,6 +60,44 @@ object KafkaStreamsApp {
     Serdes.fromFn[A](serializer, deserializer)
   }
 
+  // ------------------------
+
+  // Topics
+  final val RequestsTopic = "requests"
+  final val TokensTopic = "tokens"
+  final val RolesTopic = "roles"
+
+  // Value classes
+  type Role = String
+  type User = String
+
+  case class Request(user: String, path: String, role: Role)
+  object Request {
+    implicit val requestSerde: Serde[Request] = serde[Request]
+  }
+
+  case class AuthoredPaths(role: Role, paths: List[String])
+  object AuthoredPaths {
+    implicit val authoredPathsSerde: Serde[AuthoredPaths] = serde[AuthoredPaths]
+  }
+
+  val builder = new StreamsBuilder
+
+  val requestsStreams: KStream[User, Request] = builder.stream[User, Request](RequestsTopic)
+
+  val rolesTable: KTable[User, Role] = builder.table[User, Role](TokensTopic)
+
+  val rolesToPathsGTable: GlobalKTable[Role, AuthoredPaths] =
+    builder.globalTable[Role, AuthoredPaths](RolesTopic)
+
+  val authoredRequests: KStream[User, Request] = requestsStreams.join[Role, (Request, Role)](rolesTable) { (request, role) =>
+    (request, role)
+  }.filter { case (_, (request, role)) =>
+    request.role == role
+  }.mapValues(value => value._1)
+
+  // ------------------------
+
   case class Job(user: String, name: String, params: Map[String, String])
 
   object Job {
@@ -76,8 +115,6 @@ object KafkaStreamsApp {
   object AuthoredJob {
     implicit val authoredJobSerde: Serde[AuthoredJob] = serde[AuthoredJob]
   }
-
-  val builder = new StreamsBuilder
 
   val source: KStream[String, Job] =
     builder.stream[String, Job](JobsTopic)
