@@ -1,10 +1,10 @@
 package in.rcardin.kafka.streams
 
 
-import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
 import io.circe.parser._
 import io.circe.syntax._
+import io.circe.{Decoder, Encoder}
 import org.apache.kafka.common.serialization.Serde
 import org.apache.kafka.streams.kstream.GlobalKTable
 import org.apache.kafka.streams.scala.ImplicitConversions._
@@ -20,30 +20,26 @@ import java.util.Properties
 // ----------------------
 //
 // kafka-topics \
-//  --bootstrap-server localhost:9092 \
-//  --topic jobs \
-//  --create
+//   --bootstrap-server localhost:9092 \
+//   --topic orders-by-user \
+//   --create
 //
 // kafka-topics \
-//  --bootstrap-server localhost:9092 \
-//  --topic permissions \
-//  --create \
-//  --config "cleanup.policy=compact"
+//   --bootstrap-server localhost:9092 \
+//   --topic discount-profiles-by-user \
+//   --create \
+//   --config "cleanup.policy=compact"
+//
+// kafka-topics \
+//   --bootstrap-server localhost:9092 \
+//   --topic discounts \
+//   --create \
+//   --config "cleanup.policy=compact"
 //
 //  Producing some messages
 //  -----------------------
-//
-//  kafka-console-producer \
-//   --topic jobs \
-//   --broker-list localhost:9092 \
-//   --property parse.key=true \
-//   --property key.separator=,
-//   user1,{"user": "user1", "name": "print", "params": {}}
+//  TODO
 object KafkaStreamsApp {
-
-  val JobsTopic: String = "jobs"
-  val PermissionsTopic: String = "permissions"
-  val UserClicks: String = "clicks"
 
   def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
     val serializer = (a: A) => a.asJson.noSpaces.getBytes
@@ -60,79 +56,49 @@ object KafkaStreamsApp {
     Serdes.fromFn[A](serializer, deserializer)
   }
 
-  // ------------------------
-
   // Topics
-  final val RequestsTopic = "requests"
-  final val TokensTopic = "tokens"
-  final val RolesTopic = "roles"
+  final val OrdersByUserTopic = "orders-by-user"
+  final val DiscountProfilesByUserTopic = "discount-profiles-by-user"
+  final val Discounts = "discounts"
 
-  // Value classes
-  type Role = String
   type User = String
+  type Profile = String
+  type Product = String
 
-  case class Request(user: String, path: String, role: Role)
-  object Request {
-    implicit val requestSerde: Serde[Request] = serde[Request]
+  case class Order(user: String, products: List[Product], amount: Double)
+
+  object Order {
+    implicit val requestSerde: Serde[Order] = serde[Order]
   }
 
-  case class AuthoredPaths(role: Role, paths: List[String])
-  object AuthoredPaths {
-    implicit val authoredPathsSerde: Serde[AuthoredPaths] = serde[AuthoredPaths]
+  // Discounts profiles are a (String, String) topic
+
+  case class Discount(profile: Profile, discount: Double)
+
+  object Discount {
+    implicit val authoredPathsSerde: Serde[Discount] = serde[Discount]
   }
 
   val builder = new StreamsBuilder
 
-  val requestsStreams: KStream[User, Request] = builder.stream[User, Request](RequestsTopic)
+  val ordersStreams: KStream[User, Order] = builder.stream[User, Order](OrdersByUserTopic)
 
-  val rolesTable: KTable[User, Role] = builder.table[User, Role](TokensTopic)
+  val userProfilesTable: KTable[User, Profile] =
+    builder.table[User, Profile](DiscountProfilesByUserTopic)
 
-  val rolesToPathsGTable: GlobalKTable[Role, AuthoredPaths] =
-    builder.globalTable[Role, AuthoredPaths](RolesTopic)
+  val discountProfilesGTable: GlobalKTable[Profile, Discount] =
+    builder.globalTable[Profile, Discount](Discounts)
 
-  val authoredRequests: KStream[User, Request] = requestsStreams.join[Role, (Request, Role)](rolesTable) { (request, role) =>
-    (request, role)
-  }.filter { case (_, (request, role)) =>
-    request.role == role
-  }.mapValues(value => value._1)
-
-  // ------------------------
-
-  case class Job(user: String, name: String, params: Map[String, String])
-
-  object Job {
-    implicit val jobSerde: Serde[Job] = serde[Job]
-  }
-
-  case class Permissions(permissions: List[String])
-
-  object Permissions {
-    implicit val permissionsSerde: Serde[Permissions] = serde[Permissions]
-  }
-
-  case class AuthoredJob(job: Job, permissions: Permissions)
-
-  object AuthoredJob {
-    implicit val authoredJobSerde: Serde[AuthoredJob] = serde[AuthoredJob]
-  }
-
-  val source: KStream[String, Job] =
-    builder.stream[String, Job](JobsTopic)
-
-  val permissionsTable: KTable[String, Permissions] = builder.table[String, Permissions](PermissionsTopic)
-
-  val authoredJobsStream: KStream[String, AuthoredJob] =
-    source.join[Permissions, AuthoredJob](permissionsTable) { (job: Job, permissions: Permissions) =>
-      AuthoredJob(job, permissions)
+  val ordersWithUserProfileStream: KStream[User, (Order, Profile)] =
+    ordersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
+      (order, profile)
     }
 
-  val usersClicksStream: KStream[String, Int] = builder.stream[String, Int](UserClicks)
-
-  // authoredJobsStream.join[Int, Int](usersClicksStream)()
-
-  authoredJobsStream.foreach { (user, authoredJob) =>
-    println(s"The user $user was authored to job $authoredJob")
-  }
+  val discountedOrdersStream: KStream[User, Order] =
+    ordersWithUserProfileStream.join[Profile, Discount, Order](discountProfilesGTable)(
+      { case (_, (_, profile)) => profile },  // Joining key
+      { case ((order, _), discount) => order.copy(amount = order.amount * discount) }
+    )
 
   val topology: Topology = builder.build()
 
