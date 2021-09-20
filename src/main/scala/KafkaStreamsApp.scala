@@ -6,7 +6,7 @@ import io.circe.parser._
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder}
 import org.apache.kafka.common.serialization.Serde
-import org.apache.kafka.streams.kstream.GlobalKTable
+import org.apache.kafka.streams.kstream.{GlobalKTable, JoinWindows}
 import org.apache.kafka.streams.scala.ImplicitConversions._
 import org.apache.kafka.streams.scala._
 import org.apache.kafka.streams.scala.kstream.{KStream, KTable}
@@ -14,6 +14,8 @@ import org.apache.kafka.streams.scala.serialization.Serdes
 import org.apache.kafka.streams.scala.serialization.Serdes._
 import org.apache.kafka.streams.{KafkaStreams, StreamsConfig, Topology}
 
+import java.time.Duration
+import java.time.temporal.ChronoUnit
 import java.util.Properties
 
 // Creation of the topic:
@@ -60,28 +62,44 @@ object KafkaStreamsApp {
   final val OrdersByUserTopic = "orders-by-user"
   final val DiscountProfilesByUserTopic = "discount-profiles-by-user"
   final val Discounts = "discounts"
+  final val OrdersTopic = "orders"
+  final val PaymentsTopic = "payments"
+  final val PayedOrdersTopic = "payed-orders"
 
   type User = String
   type Profile = String
   type Product = String
+  type OrderId = String
 
-  case class Order(user: String, products: List[Product], amount: Double)
+  case class UserOrder(user: String, products: List[Product], amount: Double)
 
-  object Order {
-    implicit val requestSerde: Serde[Order] = serde[Order]
+  object UserOrder {
+    implicit val requestSerde: Serde[UserOrder] = serde[UserOrder]
   }
 
   // Discounts profiles are a (String, String) topic
 
-  case class Discount(profile: Profile, discount: Double)
+  case class Discount(profile: Profile, amount: Double)
 
   object Discount {
     implicit val authoredPathsSerde: Serde[Discount] = serde[Discount]
   }
 
+  case class Order(orderId: OrderId, amount: Double)
+
+  object Order {
+    implicit val orderSerde: Serde[Order] = serde[Order]
+  }
+
+  case class Payment(orderId: OrderId, status: String)
+
+  object Payment {
+    implicit val paymentSerde: Serde[Payment] = serde[Payment]
+  }
+
   val builder = new StreamsBuilder
 
-  val ordersStreams: KStream[User, Order] = builder.stream[User, Order](OrdersByUserTopic)
+  val usersOrdersStreams: KStream[User, UserOrder] = builder.stream[User, UserOrder](OrdersByUserTopic)
 
   val userProfilesTable: KTable[User, Profile] =
     builder.table[User, Profile](DiscountProfilesByUserTopic)
@@ -89,16 +107,37 @@ object KafkaStreamsApp {
   val discountProfilesGTable: GlobalKTable[Profile, Discount] =
     builder.globalTable[Profile, Discount](Discounts)
 
-  val ordersWithUserProfileStream: KStream[User, (Order, Profile)] =
-    ordersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
+  val ordersWithUserProfileStream: KStream[User, (UserOrder, Profile)] =
+    usersOrdersStreams.join[Profile, (UserOrder, Profile)](userProfilesTable) { (order, profile) =>
       (order, profile)
     }
 
-  val discountedOrdersStream: KStream[User, Order] =
-    ordersWithUserProfileStream.join[Profile, Discount, Order](discountProfilesGTable)(
-      { case (_, (_, profile)) => profile },  // Joining key
-      { case ((order, _), discount) => order.copy(amount = order.amount * discount) }
+  val discountedOrdersStream: KStream[User, UserOrder] =
+    ordersWithUserProfileStream.join[Profile, Discount, UserOrder](discountProfilesGTable)(
+      { case (_, (_, profile)) => profile }, // Joining key
+      { case ((order, _), discount) => order.copy(amount = order.amount * discount.amount) }
     )
+
+  discountedOrdersStream.foreach { (user, order) =>
+    println(s"The user $user placed the discounted order $order")
+  }
+
+  val ordersStream: KStream[OrderId, Order] = builder.stream[OrderId, Order](OrdersTopic)
+
+  val paymentsStream: KStream[OrderId, Payment] = builder.stream[OrderId, Payment](PaymentsTopic)
+
+  val payedOrders: KStream[OrderId, Order] = {
+
+    val joinOrdersAndPayments = (order: Order, payment: Payment) =>
+      if (payment.status == "PAYED") Option(order) else Option.empty[Order]
+
+    val joinWindow = JoinWindows.of(Duration.of(5, ChronoUnit.MINUTES))
+
+    ordersStream.join[Payment, Option[Order]](paymentsStream)(joinOrdersAndPayments, joinWindow)
+      .flatMapValues(maybeOrder => maybeOrder.toIterable)
+  }
+
+  payedOrders.to(PayedOrdersTopic)
 
   val topology: Topology = builder.build()
 
