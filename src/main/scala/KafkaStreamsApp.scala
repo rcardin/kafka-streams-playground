@@ -66,7 +66,7 @@ object KafkaStreamsApp {
   final val PaymentsTopic = "payments"
   final val PayedOrdersTopic = "payed-orders"
 
-  type User = String
+  type UserId = String
   type Profile = String
   type Product = String
   type OrderId = String
@@ -77,7 +77,7 @@ object KafkaStreamsApp {
 //    implicit val requestSerde: Serde[UserOrder] = serde[UserOrder]
 //  }
 
-  case class Order(orderId: OrderId, user: User, products: List[Product], amount: Double)
+  case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
 
   object Order {
     implicit val orderSerde: Serde[Order] = serde[Order]
@@ -99,20 +99,20 @@ object KafkaStreamsApp {
 
   val builder = new StreamsBuilder
 
-  val usersOrdersStreams: KStream[User, Order] = builder.stream[User, Order](OrdersByUserTopic)
+  val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
-  val userProfilesTable: KTable[User, Profile] =
-    builder.table[User, Profile](DiscountProfilesByUserTopic)
+  val userProfilesTable: KTable[UserId, Profile] =
+    builder.table[UserId, Profile](DiscountProfilesByUserTopic)
 
   val discountProfilesGTable: GlobalKTable[Profile, Discount] =
     builder.globalTable[Profile, Discount](Discounts)
 
-  val ordersWithUserProfileStream: KStream[User, (Order, Profile)] =
+  val ordersWithUserProfileStream: KStream[UserId, (Order, Profile)] =
     usersOrdersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
       (order, profile)
     }
 
-  val discountedOrdersStream: KStream[User, Order] =
+  val discountedOrdersStream: KStream[UserId, Order] =
     ordersWithUserProfileStream.join[Profile, Discount, Order](discountProfilesGTable)(
       { case (_, (_, profile)) => profile }, // Joining key
       { case ((order, _), discount) => order.copy(amount = order.amount * discount.amount) }
