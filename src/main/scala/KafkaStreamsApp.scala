@@ -43,7 +43,7 @@ import java.util.Properties
 //  TODO
 object KafkaStreamsApp {
 
-  def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
+  implicit def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
     val serializer = (a: A) => a.asJson.noSpaces.getBytes
     val deserializer = (aAsBytes: Array[Byte]) => {
       val aAsString = new String(aAsBytes)
@@ -79,23 +79,11 @@ object KafkaStreamsApp {
 
   case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
 
-  object Order {
-    implicit val orderSerde: Serde[Order] = serde[Order]
-  }
-
   // Discounts profiles are a (String, String) topic
 
   case class Discount(profile: Profile, amount: Double)
 
-  object Discount {
-    implicit val authoredPathsSerde: Serde[Discount] = serde[Discount]
-  }
-
   case class Payment(orderId: OrderId, status: String)
-
-  object Payment {
-    implicit val paymentSerde: Serde[Payment] = serde[Payment]
-  }
 
   val builder = new StreamsBuilder
 
