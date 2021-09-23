@@ -83,9 +83,11 @@ object KafkaStreamsApp {
 
   val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
-  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (userId, order) =>
+  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (_, order) =>
     order.amount >= 1000
   }
+
+  expensiveOrders.to("suspicious-orders")
 
   val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
     order.products
@@ -93,6 +95,10 @@ object KafkaStreamsApp {
 
   val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
     order.products
+  }
+
+  purchasedProductsStream.foreach { (userId, product) =>
+    println(s"The user $userId purchased the product $product")
   }
 
   val userProfilesTable: KTable[UserId, Profile] =
