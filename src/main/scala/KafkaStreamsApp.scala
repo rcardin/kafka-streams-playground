@@ -83,6 +83,18 @@ object KafkaStreamsApp {
 
   val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
+  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (userId, order) =>
+    order.amount >= 1000
+  }
+
+  val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
+    order.products
+  }
+
+  val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
+    order.products
+  }
+
   val userProfilesTable: KTable[UserId, Profile] =
     builder.table[UserId, Profile](DiscountProfilesByUserTopic)
 
