@@ -71,12 +71,6 @@ object KafkaStreamsApp {
   type Product = String
   type OrderId = String
 
-//  case class UserOrder(user: String, products: List[Product], amount: Double)
-//
-//  object UserOrder {
-//    implicit val requestSerde: Serde[UserOrder] = serde[UserOrder]
-//  }
-
   case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
 
   // Discounts profiles are a (String, String) topic
