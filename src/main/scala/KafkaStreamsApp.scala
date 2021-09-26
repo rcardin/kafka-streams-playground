@@ -61,7 +61,7 @@ object KafkaStreamsApp {
   // Topics
   final val OrdersByUserTopic = "orders-by-user"
   final val DiscountProfilesByUserTopic = "discount-profiles-by-user"
-  final val Discounts = "discounts"
+  final val DiscountsTopic = "discounts"
   final val OrdersTopic = "orders"
   final val PaymentsTopic = "payments"
   final val PayedOrdersTopic = "payed-orders"
@@ -105,7 +105,7 @@ object KafkaStreamsApp {
     builder.table[UserId, Profile](DiscountProfilesByUserTopic)
 
   val discountProfilesGTable: GlobalKTable[Profile, Discount] =
-    builder.globalTable[Profile, Discount](Discounts)
+    builder.globalTable[Profile, Discount](DiscountsTopic)
 
   val ordersWithUserProfileStream: KStream[UserId, (Order, Profile)] =
     usersOrdersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
