@@ -9,7 +9,7 @@ import org.apache.kafka.common.serialization.Serde
 import org.apache.kafka.streams.kstream.{GlobalKTable, JoinWindows}
 import org.apache.kafka.streams.scala.ImplicitConversions._
 import org.apache.kafka.streams.scala._
-import org.apache.kafka.streams.scala.kstream.{KStream, KTable}
+import org.apache.kafka.streams.scala.kstream.{KGroupedStream, KStream, KTable}
 import org.apache.kafka.streams.scala.serialization.Serdes
 import org.apache.kafka.streams.scala.serialization.Serdes._
 import org.apache.kafka.streams.{KafkaStreams, StreamsConfig, Topology}
@@ -96,6 +96,15 @@ object KafkaStreamsApp {
   val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
     order.products
   }
+
+  val purchasedByFirstLetter: KGroupedStream[String, Product] =
+    purchasedProductsStream.groupBy[String] { (userId, products) =>
+      userId.charAt(0).toLower.toString
+    }
+
+  // TODO
+
+  val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
 
   purchasedProductsStream.foreach { (userId, product) =>
     println(s"The user $userId purchased the product $product")
