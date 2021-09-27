@@ -102,9 +102,8 @@ object KafkaStreamsApp {
       userId.charAt(0).toLower.toString
     }
 
-  // TODO
-
   val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
+  val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
 
   purchasedProductsStream.foreach { (userId, product) =>
     println(s"The user $userId purchased the product $product")
