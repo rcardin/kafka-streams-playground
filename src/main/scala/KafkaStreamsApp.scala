@@ -104,13 +104,14 @@ object KafkaStreamsApp {
       userId.charAt(0).toLower.toString
     }
 
-  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
-  val countOfPurchasedProductsByUserFirstLetterEvery1Minute: KTable[Windowed[String], Long] =
-    purchasedByFirstLetter.windowedBy(everyTenSeconds)
-      .aggregate[Long](0L) { (firstLetter, product, acc) => acc + 1 }
-
   val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
+
+  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
   val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
+
+  val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
+    productsPurchasedByUsers.windowedBy(everyTenSeconds)
+      .aggregate[Long](0L) { (userId, product, counter) => counter + 1}
 
   purchasedProductsStream.foreach { (userId, product) =>
     println(s"The user $userId purchased the product $product")
