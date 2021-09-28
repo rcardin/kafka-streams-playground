@@ -6,7 +6,7 @@ import io.circe.parser._
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder}
 import org.apache.kafka.common.serialization.Serde
-import org.apache.kafka.streams.kstream.{GlobalKTable, JoinWindows}
+import org.apache.kafka.streams.kstream.{GlobalKTable, JoinWindows, TimeWindows, Windowed}
 import org.apache.kafka.streams.scala.ImplicitConversions._
 import org.apache.kafka.streams.scala._
 import org.apache.kafka.streams.scala.kstream.{KGroupedStream, KStream, KTable}
@@ -17,6 +17,8 @@ import org.apache.kafka.streams.{KafkaStreams, StreamsConfig, Topology}
 import java.time.Duration
 import java.time.temporal.ChronoUnit
 import java.util.Properties
+import scala.concurrent.duration.DurationInt
+import scala.jdk.DurationConverters._
 
 // Creation of the topic:
 // ----------------------
@@ -101,6 +103,11 @@ object KafkaStreamsApp {
     purchasedProductsStream.groupBy[String] { (userId, products) =>
       userId.charAt(0).toLower.toString
     }
+
+  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
+  val countOfPurchasedProductsByUserFirstLetterEvery1Minute: KTable[Windowed[String], Long] =
+    purchasedByFirstLetter.windowedBy(everyTenSeconds)
+      .aggregate[Long](0L) { (firstLetter, product, acc) => acc + 1 }
 
   val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
   val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
