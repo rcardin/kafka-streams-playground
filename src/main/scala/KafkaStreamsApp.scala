@@ -85,37 +85,37 @@ object KafkaStreamsApp {
 
   val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
-  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (_, order) =>
-    order.amount >= 1000
-  }
+//  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (_, order) =>
+//    order.amount >= 1000
+//  }
+//
+//  expensiveOrders.to("suspicious-orders")
 
-  expensiveOrders.to("suspicious-orders")
+//  val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
+//    order.products
+//  }
 
-  val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
-    order.products
-  }
+//  val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
+//    order.products
+//  }
+//
+//  val purchasedByFirstLetter: KGroupedStream[String, Product] =
+//    purchasedProductsStream.groupBy[String] { (userId, products) =>
+//      userId.charAt(0).toLower.toString
+//    }
 
-  val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
-    order.products
-  }
+//  val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
 
-  val purchasedByFirstLetter: KGroupedStream[String, Product] =
-    purchasedProductsStream.groupBy[String] { (userId, products) =>
-      userId.charAt(0).toLower.toString
-    }
-
-  val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
-
-  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
-  val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
-
-  val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
-    productsPurchasedByUsers.windowedBy(everyTenSeconds)
-      .aggregate[Long](0L) { (userId, product, counter) => counter + 1}
-
-  purchasedProductsStream.foreach { (userId, product) =>
-    println(s"The user $userId purchased the product $product")
-  }
+//  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
+//  val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
+//
+//  val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
+//    productsPurchasedByUsers.windowedBy(everyTenSeconds)
+//      .aggregate[Long](0L) { (userId, product, counter) => counter + 1}
+//
+//  purchasedProductsStream.foreach { (userId, product) =>
+//    println(s"The user $userId purchased the product $product")
+//  }
 
   val userProfilesTable: KTable[UserId, Profile] =
     builder.table[UserId, Profile](DiscountProfilesByUserTopic)
@@ -138,7 +138,7 @@ object KafkaStreamsApp {
 
   val paymentsStream: KStream[OrderId, Payment] = builder.stream[OrderId, Payment](PaymentsTopic)
 
-  val payedOrders: KStream[OrderId, Order] = {
+  val paidOrders: KStream[OrderId, Order] = {
 
     val joinOrdersAndPayments = (order: Order, payment: Payment) =>
       if (payment.status == "PAID") Option(order) else Option.empty[Order]
@@ -149,7 +149,7 @@ object KafkaStreamsApp {
       .flatMapValues(maybeOrder => maybeOrder.toIterable)
   }
 
-  payedOrders.to(PayedOrdersTopic)
+  paidOrders.to(PayedOrdersTopic)
 
   val topology: Topology = builder.build()
 
