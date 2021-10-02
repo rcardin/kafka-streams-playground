@@ -134,16 +134,14 @@ object KafkaStreamsApp {
       { case ((order, _), discount) => order.copy(amount = order.amount * discount.amount) }
     )
 
-  discountedOrdersStream.selectKey { (_, order) => order.orderId }.to(OrdersTopic)
-
-  val ordersStream: KStream[OrderId, Order] = builder.stream[OrderId, Order](OrdersTopic)
+  val ordersStream: KStream[OrderId, Order] = discountedOrdersStream.selectKey { (_, order) => order.orderId }
 
   val paymentsStream: KStream[OrderId, Payment] = builder.stream[OrderId, Payment](PaymentsTopic)
 
   val payedOrders: KStream[OrderId, Order] = {
 
     val joinOrdersAndPayments = (order: Order, payment: Payment) =>
-      if (payment.status == "PAYED") Option(order) else Option.empty[Order]
+      if (payment.status == "PAID") Option(order) else Option.empty[Order]
 
     val joinWindow = JoinWindows.of(Duration.of(5, ChronoUnit.MINUTES))
 
