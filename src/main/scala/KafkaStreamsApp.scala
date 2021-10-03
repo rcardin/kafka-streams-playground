@@ -85,79 +85,98 @@ object KafkaStreamsApp {
 
   val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
-//  val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (_, order) =>
-//    order.amount >= 1000
-//  }
-//
-//  expensiveOrders.to("suspicious-orders")
-
-//  val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
-//    order.products
-//  }
-
-//  val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
-//    order.products
-//  }
-//
-//  val purchasedByFirstLetter: KGroupedStream[String, Product] =
-//    purchasedProductsStream.groupBy[String] { (userId, products) =>
-//      userId.charAt(0).toLower.toString
-//    }
-
-//  val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
-
-//  val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
-//  val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
-//
-//  val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
-//    productsPurchasedByUsers.windowedBy(everyTenSeconds)
-//      .aggregate[Long](0L) { (userId, product, counter) => counter + 1}
-//
-//  purchasedProductsStream.foreach { (userId, product) =>
-//    println(s"The user $userId purchased the product $product")
-//  }
-
-  val userProfilesTable: KTable[UserId, Profile] =
-    builder.table[UserId, Profile](DiscountProfilesByUserTopic)
-
-  val discountProfilesGTable: GlobalKTable[Profile, Discount] =
-    builder.globalTable[Profile, Discount](DiscountsTopic)
-
-  val ordersWithUserProfileStream: KStream[UserId, (Order, Profile)] =
-    usersOrdersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
-      (order, profile)
+  def expensiveOrdersTopology(): Unit = {
+    val expensiveOrders: KStream[UserId, Order] = usersOrdersStreams.filter { (_, order) =>
+      order.amount >= 1000
     }
-
-  val discountedOrdersStream: KStream[UserId, Order] =
-    ordersWithUserProfileStream.join[Profile, Discount, Order](discountProfilesGTable)(
-      { case (_, (_, profile)) => profile }, // Joining key
-      { case ((order, _), discount) => order.copy(amount = order.amount * discount.amount) }
-    )
-
-  val ordersStream: KStream[OrderId, Order] = discountedOrdersStream.selectKey { (_, order) => order.orderId }
-
-  val paymentsStream: KStream[OrderId, Payment] = builder.stream[OrderId, Payment](PaymentsTopic)
-
-  val paidOrders: KStream[OrderId, Order] = {
-
-    val joinOrdersAndPayments = (order: Order, payment: Payment) =>
-      if (payment.status == "PAID") Option(order) else Option.empty[Order]
-
-    val joinWindow = JoinWindows.of(Duration.of(5, ChronoUnit.MINUTES))
-
-    ordersStream.join[Payment, Option[Order]](paymentsStream)(joinOrdersAndPayments, joinWindow)
-      .flatMapValues(maybeOrder => maybeOrder.toIterable)
+    expensiveOrders.to("suspicious-orders")
   }
 
-  paidOrders.to(PayedOrdersTopic)
+  def purchasedListOfProductsTopology(): Unit = {
+    val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
+      order.products
+    }
+    purchasedListOfProductsStream.foreach(println)
+  }
 
-  val topology: Topology = builder.build()
+  def purchasedProductsByFirstLetterTopology(): Unit = {
+    val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
+      order.products
+    }
+
+    val purchasedByFirstLetter: KGroupedStream[String, Product] =
+      purchasedProductsStream.groupBy[String] { (userId, products) =>
+        userId.charAt(0).toLower.toString
+      }
+
+    purchasedProductsStream.foreach { (userId, product) =>
+      println(s"The user $userId purchased the product $product")
+    }
+  }
+
+  def numberOfProductsByUserEveryTenSecondsTopology(): Unit = {
+    val purchasedProductsStream: KStream[UserId, Product] = usersOrdersStreams.flatMapValues { order =>
+      order.products
+    }
+
+    val productsPurchasedByUsers: KGroupedStream[UserId, Product] = purchasedProductsStream.groupByKey
+
+    val everyTenSeconds: TimeWindows = TimeWindows.of(10.second.toJava)
+
+    val numberOfProductsByUser: KTable[UserId, Long] = productsPurchasedByUsers.count()
+
+    val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
+      productsPurchasedByUsers.windowedBy(everyTenSeconds)
+        .aggregate[Long](0L) { (userId, product, counter) => counter + 1 }
+
+    numberOfProductsByUserEveryTenSeconds.toStream.foreach(println)
+  }
+
+  def paidOrdersTopology(): Unit = {
+    val userProfilesTable: KTable[UserId, Profile] =
+      builder.table[UserId, Profile](DiscountProfilesByUserTopic)
+
+    val discountProfilesGTable: GlobalKTable[Profile, Discount] =
+      builder.globalTable[Profile, Discount](DiscountsTopic)
+
+    val ordersWithUserProfileStream: KStream[UserId, (Order, Profile)] =
+      usersOrdersStreams.join[Profile, (Order, Profile)](userProfilesTable) { (order, profile) =>
+        (order, profile)
+      }
+
+    val discountedOrdersStream: KStream[UserId, Order] =
+      ordersWithUserProfileStream.join[Profile, Discount, Order](discountProfilesGTable)(
+        { case (_, (_, profile)) => profile }, // Joining key
+        { case ((order, _), discount) => order.copy(amount = order.amount * discount.amount) }
+      )
+
+    val ordersStream: KStream[OrderId, Order] = discountedOrdersStream.selectKey { (_, order) => order.orderId }
+
+    val paymentsStream: KStream[OrderId, Payment] = builder.stream[OrderId, Payment](PaymentsTopic)
+
+    val paidOrders: KStream[OrderId, Order] = {
+
+      val joinOrdersAndPayments = (order: Order, payment: Payment) =>
+        if (payment.status == "PAID") Option(order) else Option.empty[Order]
+
+      val joinWindow = JoinWindows.of(Duration.of(5, ChronoUnit.MINUTES))
+
+      ordersStream.join[Payment, Option[Order]](paymentsStream)(joinOrdersAndPayments, joinWindow)
+        .flatMapValues(maybeOrder => maybeOrder.toIterable)
+    }
+
+    paidOrders.to(PayedOrdersTopic)
+  }
 
   def main(args: Array[String]): Unit = {
     val props = new Properties
-    props.put(StreamsConfig.APPLICATION_ID_CONFIG, "scheduler")
+    props.put(StreamsConfig.APPLICATION_ID_CONFIG, "orders-application")
     props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
     props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.stringSerde.getClass)
+
+    paidOrdersTopology()
+
+    val topology: Topology = builder.build()
 
     println(topology.describe())
 
