@@ -40,6 +40,21 @@ import scala.jdk.DurationConverters._
 //   --create \
 //   --config "cleanup.policy=compact"
 //
+// kafka-topics \
+//   --bootstrap-server localhost:9092 \
+//   --topic orders \
+//   --create
+//
+// kafka-topics \
+//   --bootstrap-server localhost:9092 \
+//   --topic payments \
+//   --create
+//
+// kafka-topics \
+//   --bootstrap-server localhost:9092 \
+//   --topic paid-orders \
+//   --create
+//
 //  Producing some messages
 //  -----------------------
 //  TODO
@@ -66,7 +81,7 @@ object KafkaStreamsApp {
   final val DiscountsTopic = "discounts"
   final val OrdersTopic = "orders"
   final val PaymentsTopic = "payments"
-  final val PayedOrdersTopic = "payed-orders"
+  final val PaidOrdersTopic = "paid-orders"
 
   type UserId = String
   type Profile = String
@@ -74,8 +89,6 @@ object KafkaStreamsApp {
   type OrderId = String
 
   case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
-
-  // Discounts profiles are a (String, String) topic
 
   case class Discount(profile: Profile, amount: Double)
 
@@ -165,7 +178,7 @@ object KafkaStreamsApp {
         .flatMapValues(maybeOrder => maybeOrder.toIterable)
     }
 
-    paidOrders.to(PayedOrdersTopic)
+    paidOrders.to(PaidOrdersTopic)
   }
 
   def main(args: Array[String]): Unit = {
