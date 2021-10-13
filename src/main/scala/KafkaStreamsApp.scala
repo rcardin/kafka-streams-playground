@@ -54,47 +54,52 @@ import scala.jdk.DurationConverters._
 //   --bootstrap-server localhost:9092 \
 //   --topic paid-orders \
 //   --create
-//
-//  Producing some messages
-//  -----------------------
-//  TODO
 object KafkaStreamsApp {
 
-  implicit def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
-    val serializer = (a: A) => a.asJson.noSpaces.getBytes
-    val deserializer = (aAsBytes: Array[Byte]) => {
-      val aAsString = new String(aAsBytes)
-      val aOrError = decode[A](aAsString)
-      aOrError match {
-        case Right(a) => Option(a)
-        case Left(error) =>
-          println(s"There was an error converting the message $aOrError, $error")
-          Option.empty
+  object Implicits {
+    implicit def serde[A >: Null : Decoder : Encoder]: Serde[A] = {
+      val serializer = (a: A) => a.asJson.noSpaces.getBytes
+      val deserializer = (aAsBytes: Array[Byte]) => {
+        val aAsString = new String(aAsBytes)
+        val aOrError = decode[A](aAsString)
+        aOrError match {
+          case Right(a) => Option(a)
+          case Left(error) =>
+            println(s"There was an error converting the message $aOrError, $error")
+            Option.empty
+        }
       }
+      Serdes.fromFn[A](serializer, deserializer)
     }
-    Serdes.fromFn[A](serializer, deserializer)
   }
 
   // Topics
-  final val OrdersByUserTopic = "orders-by-user"
-  final val DiscountProfilesByUserTopic = "discount-profiles-by-user"
-  final val DiscountsTopic = "discounts"
-  final val OrdersTopic = "orders"
-  final val PaymentsTopic = "payments"
-  final val PaidOrdersTopic = "paid-orders"
+  object Topics {
+    final val OrdersByUserTopic = "orders-by-user"
+    final val DiscountProfilesByUserTopic = "discount-profiles-by-user"
+    final val DiscountsTopic = "discounts"
+    final val OrdersTopic = "orders"
+    final val PaymentsTopic = "payments"
+    final val PaidOrdersTopic = "paid-orders"
+  }
 
-  type UserId = String
-  type Profile = String
-  type Product = String
-  type OrderId = String
+  object Domain {
+    type UserId = String
+    type Profile = String
+    type Product = String
+    type OrderId = String
 
-  case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
+    case class Order(orderId: OrderId, user: UserId, products: List[Product], amount: Double)
 
-  case class Discount(profile: Profile, amount: Double)
+    case class Discount(profile: Profile, amount: Double)
 
-  case class Payment(orderId: OrderId, status: String)
-
+    case class Payment(orderId: OrderId, status: String)
+  }
   val builder = new StreamsBuilder
+
+  import Implicits._
+  import Domain._
+  import Topics._
 
   val usersOrdersStreams: KStream[UserId, Order] = builder.stream[UserId, Order](OrdersByUserTopic)
 
