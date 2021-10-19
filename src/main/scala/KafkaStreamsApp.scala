@@ -114,7 +114,7 @@ object KafkaStreamsApp {
     val purchasedListOfProductsStream: KStream[UserId, List[Product]] = usersOrdersStreams.mapValues { order =>
       order.products
     }
-    purchasedListOfProductsStream.foreach(println)
+    purchasedListOfProductsStream.foreach((userId, products) => println((userId, products)))
   }
 
   def purchasedProductsByFirstLetterTopology(): Unit = {
@@ -123,7 +123,7 @@ object KafkaStreamsApp {
     }
 
     val purchasedByFirstLetter: KGroupedStream[String, Product] =
-      purchasedProductsStream.groupBy[String] { (userId, products) =>
+      purchasedProductsStream.groupBy[String] { (userId, _) =>
         userId.charAt(0).toLower.toString
       }
 
@@ -145,9 +145,11 @@ object KafkaStreamsApp {
 
     val numberOfProductsByUserEveryTenSeconds: KTable[Windowed[UserId], Long] =
       productsPurchasedByUsers.windowedBy(everyTenSeconds)
-        .aggregate[Long](0L) { (userId, product, counter) => counter + 1 }
+        .aggregate[Long](0L) { (_, _, counter) => counter + 1 }
 
-    numberOfProductsByUserEveryTenSeconds.toStream.foreach(println)
+    numberOfProductsByUserEveryTenSeconds.toStream.foreach { (userId, count) =>
+      println((userId, count))
+    }
   }
 
   def paidOrdersTopology(): Unit = {
